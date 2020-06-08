@@ -530,3 +530,23 @@ CMessage& CMessage::operator>>(double& dValue)
 
 	return *this;
 }
+
+CMessage& CMessage::operator>>(UINT64& dValue)
+{
+	int realSize = GetDataSize() - sizeof(dValue);
+	if (realSize < 0)
+	{
+		CExceptClass* Except = new CExceptClass(L">> DOUBLE ERROR", m_cpBuffer, m_iMaxSize);
+		throw Except;
+	}
+
+	realSize = sizeof(dValue);
+	char* ptr = m_cpBuffer;
+	ptr += m_iFront;
+
+	memcpy(&dValue, ptr, realSize);
+	m_iUsingSize -= realSize;
+	m_iFront += realSize;
+
+	return *this;
+}

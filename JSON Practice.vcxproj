@@ -140,6 +140,9 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClCompile Include="CExceptClass.cpp" />
+    <ClCompile Include="CMessage.cpp" />
+    <ClCompile Include="CRingBuffer.cpp" />
     <ClCompile Include="FriendManageServer(Select,Json).cpp" />
     <ClCompile Include="Main%28char%29.cpp">
       <ExcludedFromBuild Condition="'$(Configuration)|$(Platform)'=='Debug|Win32'">false</ExcludedFromBuild>
@@ -150,6 +153,9 @@
     </ClCompile>
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="CExceptClass.h" />
+    <ClInclude Include="CMessage.h" />
+    <ClInclude Include="CRingBuffer.h" />
     <ClInclude Include="Protocol.h" />
     <ClInclude Include="rapidjson\document.h" />
     <ClInclude Include="rapidjson\stringbuffer.h" />

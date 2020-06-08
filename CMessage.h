@@ -218,4 +218,5 @@ public:
 
 	CMessage& operator >> (__int64& iValue);
 	CMessage& operator >> (double& dValue);
+	CMessage& operator >> (UINT64& dValue);
 };
