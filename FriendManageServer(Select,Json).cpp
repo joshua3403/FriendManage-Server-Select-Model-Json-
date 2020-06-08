@@ -57,7 +57,7 @@ int g_iLoginClientID = 0;
 // 서버에 접속된 모든 client를 관리하는 Map
 std::list<SESSION*> ClientList;
 // 회원가입된 회원을 관리하는 Map
-std::unordered_map<DWORD, CLIENT*> MemberMap;
+std::unordered_map<UINT64, CLIENT*> MemberMap;
 // 가입된 회원들의 친구리스트를 관리하는 multimap
 std::multimap<UINT64, CLIENT*> MemberFriendMap;
 // 특정 회원이 특정회원에게 보낸 친구요청 리스트를 관리하는 multimap, first = 요청한 회원의 ID, second = 요청받은 회원의 CLIENT*
@@ -92,18 +92,39 @@ bool NetWork_ReqRegister(SESSION* session, CMessage* message);
 bool NetWork_ReqLogin(SESSION* session, CMessage* message);
 bool NetWork_ReqAccountList(SESSION* session);
 bool NetWork_ReqFriendList(SESSION* session);
+bool NetWork_ReqFriendReqList(SESSION* session);
+bool NetWork_ReqFriendResList(SESSION* session);
+bool NetWork_ReqFriendRemove(SESSION* session, CMessage* message);
+bool NetWork_ReqFriendReq(SESSION* session, CMessage* message);
+bool NetWork_ReqFriendRedRemove(SESSION* session, CMessage* message);
+bool NetWork_ReqFriendReqDeny(SESSION* session, CMessage* message);
+bool NetWork_ReqFriendReqAgree(SESSION* session, CMessage* message);
 
 // 서버의 응답
 void NetWork_ResRegister(SESSION* session, WORD Result, UINT64 pClientID);
 void NetWork_ResLogin(SESSION* session, CLIENT* pSession);
 void NetWork_ResAccountList(SESSION* session);
 void NetWork_ResFriendList(SESSION* session);
+void NetWork_ResFriendReqList(SESSION* session);
+void NetWork_ResFriendResList(SESSION* session);
+void NetWork_ResFriendRemove(SESSION* session, BYTE result, UINT64 ClientID);
+void NetWork_ResFriendReq(SESSION* session, BYTE result, UINT64 ClientID);
+void NetWork_ResFriendReqRemove(SESSION* session, BYTE result, UINT64 ClientID);
+void NetWork_ResFriendReqDeny(SESSION* session, BYTE result, UINT64 ClientID);
+void NetWork_ResFriendReqAgree(SESSION* session, BYTE result, UINT64 ClientID);
 
 // 패킷 만드는 함수
 void MakePacket_ResRegister(st_PACKET_HEADER* pHeader, CMessage* message, WORD result, UINT64 ID);
 void MakePacket_ResLogin(st_PACKET_HEADER* pHeader, CMessage* message, CLIENT* pSession);
 void MakePacket_ResAccountList(st_PACKET_HEADER* pHeader, CMessage* message);
 void MakePacket_ResFriendList(st_PACKET_HEADER* pHeader, CMessage* message, BOOL isLogined);
+void MakePacket_ResFriendReqList(st_PACKET_HEADER* pHeader, CMessage* message, BOOL isLogined);
+void MakePacket_ResFriendResList(st_PACKET_HEADER* pHeader, CMessage* message, BOOL isLogined);
+void MakePacket_ResFriendRemove(st_PACKET_HEADER* pHeader, CMessage* message, BYTE result, UINT64 ClientID);
+void MakePacket_ResFriendReq(st_PACKET_HEADER* pHeader, CMessage* message, BYTE result, UINT64 ClientID);
+void MakePacket_ResFriendReqRemove(st_PACKET_HEADER* pHeader, CMessage* message, BYTE result, UINT64 ClientID);
+void MakePacket_ResFriendReqDeny(st_PACKET_HEADER* pHeader, CMessage* message, BYTE result, UINT64 ClientID);
+void MakePacket_ResFriendReqAgree(st_PACKET_HEADER* pHeader, CMessage* message, BYTE result, UINT64 ClientID);
 
 // ClientList에서 ID를 key로 SESSION*를 반환하는 함수
 SESSION* FindSession(DWORD id);
@@ -115,7 +136,7 @@ void AddSession(SESSION* session);
 // MemberMap에서 회원의 닉네임을 찾아주는 함수
 CLIENT* FindMember(UINT64 id);
 // 새로운 회원을 추가하는 함수
-void AddMemeber(UINT64 id, WCHAR* nickName);
+void AddMemeber(UINT64 id, CLIENT* pClient);
 // MemberMap에서 회원을 삭제하는 함수
 void DeleteMember(UINT64 id);
 
@@ -132,6 +153,13 @@ std::pair<std::multimap<UINT64, CLIENT*>::iterator, std::multimap<UINT64, CLIENT
 void AddMemberFriendReq(UINT64 MainFriend, UINT64 TargetFriend);
 // MemberReqFriendMap에서 특정 Member의 친구 요청 중 1개를 삭제하는 함수
 void DeleteMemberFriendReq(UINT64 MainFriend, UINT64 TargetFriend);
+
+// MemberResFriendMap에서 특정 Member의 친구 추가 요청리스트의 iterator를 받는 함수
+std::pair<std::multimap<UINT64, CLIENT*>::iterator, std::multimap<UINT64, CLIENT*>::iterator> FindMemberFriendRes(UINT64 id);
+// MemberResFriendMap에 특정 Member의 친구요청을 추가하는 함수
+void AddMemberFriendRes(UINT64 MainFriend, UINT64 TargetFriend);
+// MemberResFriendMap에서 특정 Member의 친구 요청 중 1개를 삭제하는 함수
+void DeleteMemberFriendRes(UINT64 MainFriend, UINT64 TargetFriend);
 
 // 유니캐스트 Send
 void SendPacket_Unicast(st_SESSION* session, st_PACKET_HEADER* header, CMessage* message);
@@ -281,7 +309,7 @@ CLIENT* FindMember(UINT64 id)
 	return temp;
 }
 
-void AddMemeber(DWORD id, CLIENT* pClient)
+void AddMemeber(UINT64 id, CLIENT* pClient)
 {
 	MemberMap.insert(std::make_pair(id, pClient));
 }
@@ -328,6 +356,77 @@ void AddMemberFriendReq(UINT64 MainFriend, UINT64 TargetFriend)
 	CLIENT* pMember = FindMember(TargetFriend);
 	MemberReqFriendMap.insert(std::make_pair(MainFriend, FindMember(TargetFriend)));
 	MemberResFriendMap.insert(std::make_pair(pMember->ID, FindMember(MainFriend)));
+}
+
+void DeleteMemberFriendReq(UINT64 MainFriend, UINT64 TargetFriend)
+{
+	typedef std::multimap<UINT64, CLIENT*>::iterator iter;
+	// MainFriend에서 보낸 TargetFriend에게 보낸 친구 요청 삭제
+	std::pair<iter, iter> iterpair = MemberReqFriendMap.equal_range(MainFriend);
+	iter it = iterpair.first;
+	for (; it != iterpair.second; it++)
+	{
+		if (it->second->ID == TargetFriend)
+		{
+			MemberFriendMap.erase(it);
+			break;
+		}
+	}
+
+	// TargetFriend가 MainFriend로부터 받은 친구 요청을 삭제
+	std::pair<iter, iter> iterpair2 = MemberResFriendMap.equal_range(TargetFriend);
+	iter it2 = iterpair2.first;
+	for (; it2 != iterpair.second; it++)
+	{
+		if (it2->second->ID == MainFriend)
+		{
+			MemberResFriendMap.erase(it2);
+			break;
+		}
+	}
+}
+
+std::pair<std::multimap<UINT64, CLIENT*>::iterator, std::multimap<UINT64, CLIENT*>::iterator> FindMemberFriendRes(UINT64 id)
+{
+	std::pair< std::multimap<UINT64, CLIENT*>::iterator, std::multimap<UINT64, CLIENT*>::iterator> temp;
+	temp.first = MemberResFriendMap.equal_range(id).first;
+	temp.second = MemberResFriendMap.equal_range(id).second;
+	return temp;
+}
+
+void AddMemberFriendRes(UINT64 MainFriend, UINT64 TargetFriend)
+{
+	CLIENT* pMember = FindMember(TargetFriend);
+	MemberResFriendMap.insert(std::make_pair(MainFriend, FindMember(TargetFriend)));
+	MemberReqFriendMap.insert(std::make_pair(pMember->ID, FindMember(MainFriend)));
+}
+
+void DeleteMemberFriendRes(UINT64 MainFriend, UINT64 TargetFriend)
+{
+	typedef std::multimap<UINT64, CLIENT*>::iterator iter;
+	// MainFriend에서 보낸 TargetFriend에게 보낸 친구 요청 삭제
+	std::pair<iter, iter> iterpair = MemberReqFriendMap.equal_range(MainFriend);
+	iter it = iterpair.first;
+	for (; it != iterpair.second; it++)
+	{
+		if (it->second->ID == TargetFriend)
+		{
+			MemberFriendMap.erase(it);
+			break;
+		}
+	}
+
+	// TargetFriend가 MainFriend로부터 받은 친구 요청을 삭제
+	std::pair<iter, iter> iterpair2 = MemberResFriendMap.equal_range(TargetFriend);
+	iter it2 = iterpair2.first;
+	for (; it2 != iterpair.second; it++)
+	{
+		if (it2->second->ID == MainFriend)
+		{
+			MemberResFriendMap.erase(it2);
+			break;
+		}
+	}
 }
 
 void SendPacket_Unicast(st_SESSION* session, st_PACKET_HEADER* header, CMessage* message)
@@ -613,6 +712,26 @@ bool PacketProc(SESSION* session, WORD dwType, CMessage* message)
 	case df_REQ_FRIEND_LIST:
 		return NetWork_ReqFriendList(session);
 		break;
+	case df_REQ_FRIEND_REQUEST_LIST:
+		return NetWork_ReqFriendReqList(session);
+		break;
+	case df_REQ_FRIEND_REPLY_LIST:
+		return NetWork_ReqFriendResList(session);
+	case df_REQ_FRIEND_REMOVE:
+		return NetWork_ReqFriendRemove(session, message);
+		break;
+	case df_REQ_FRIEND_REQUEST:
+		return NetWork_ReqFriendReq(session, message);
+		break;
+	case df_REQ_FRIEND_CANCEL:
+		return NetWork_ReqFriendRedRemove(session, message);
+		break;
+	case df_REQ_FRIEND_DENY:
+		return NetWork_ReqFriendReqDeny(session, message);
+		break;
+	case df_REQ_FRIEND_AGREE:
+		return NetWork_ReqFriendReqAgree(session, message);
+		break;
 	default:
 		break;
 	}
@@ -658,6 +777,244 @@ bool NetWork_ReqFriendList(SESSION* session)
 	return true;
 }
 
+bool NetWork_ReqFriendReqList(SESSION* session)
+{
+	NetWork_ResFriendReqList(session);
+	return true;
+}
+
+bool NetWork_ReqFriendResList(SESSION* session)
+{
+	NetWork_ResFriendResList(session);
+	return true;
+}
+
+bool NetWork_ReqFriendRemove(SESSION* session, CMessage* message)
+{
+	UINT64 TargetClientID;
+	(*message) >> TargetClientID;
+	if (g_iLoginClientID == 0)
+	{
+		NetWork_ResFriendRemove(session, df_RESULT_FRIEND_REMOVE_FAIL, TargetClientID);
+		return true;
+	}
+	std::pair<std::multimap<UINT64, CLIENT*>::iterator, std::multimap<UINT64, CLIENT*>::iterator> temp = FindMemberFriend(g_iLoginClientID);
+	BOOL Flag = FALSE;
+	for (std::multimap<UINT64, CLIENT*>::iterator itor = temp.first; itor != temp.second; itor++)
+	{
+		if (itor->first == TargetClientID)
+		{
+			Flag = TRUE;
+			MemberFriendMap.erase(itor);
+			break;
+		}
+	}
+	if (Flag == FALSE)
+	{
+		NetWork_ResFriendRemove(session, df_RESULT_FRIEND_REMOVE_NOTFRIEND, TargetClientID);
+		return true;
+	}
+	else
+	{
+		NetWork_ResFriendRemove(session, df_RESULT_FRIEND_REMOVE_OK, TargetClientID);
+		return true;
+	}
+}
+
+bool NetWork_ReqFriendReq(SESSION* session, CMessage* message)
+{
+	UINT64 TargetClientID;
+	(*message) >> TargetClientID;
+	if (g_iLoginClientID == 0)
+	{
+		NetWork_ResFriendReq(session, df_RESULT_FRIEND_REQUEST_NOTFOUND, TargetClientID);
+		return true;
+	}
+	CLIENT* targetClient = FindMember(TargetClientID);
+	if (targetClient == nullptr)
+	{
+		NetWork_ResFriendReq(session, df_RESULT_FRIEND_REQUEST_NOTFOUND, TargetClientID);
+		return true;
+	}
+	else
+	{
+		std::pair<std::multimap<UINT64, CLIENT*>::iterator, std::multimap<UINT64, CLIENT*>::iterator> temp = FindMemberFriendReq(g_iLoginClientID);
+		BOOL Flag = false;
+		for (std::multimap<UINT64, CLIENT*>::iterator itor = temp.first; itor != temp.second; itor++)
+		{
+			if (itor->second->ID == TargetClientID)
+			{
+				Flag = TRUE;
+				break;
+			}
+		}
+		if (Flag)
+		{
+			NetWork_ResFriendReq(session, df_RESULT_FRIEND_REQUEST_AREADY, TargetClientID);
+			return true;
+		}
+		else
+		{
+			MemberReqFriendMap.insert(std::make_pair(g_iLoginClientID, FindMember(TargetClientID)));
+			MemberResFriendMap.insert(std::make_pair(TargetClientID, FindMember(g_iLoginClientID)));
+			NetWork_ResFriendReq(session, df_RESULT_FRIEND_REQUEST_OK, TargetClientID);
+		}
+	}
+	return true;
+}
+
+bool NetWork_ReqFriendRedRemove(SESSION* session, CMessage* message)
+{
+	UINT64 TargetClientID;
+	(*message) >> TargetClientID;
+	if (g_iLoginClientID == 0)
+	{
+		NetWork_ResFriendReqRemove(session, df_RESULT_FRIEND_CANCEL_FAIL, TargetClientID);
+		return true;
+	}
+	CLIENT* targetClient = FindMember(TargetClientID);
+	if (targetClient == nullptr)
+	{
+		NetWork_ResFriendReqRemove(session, df_RESULT_FRIEND_CANCEL_FAIL, TargetClientID);
+		return true;
+	}
+	else
+	{
+		std::pair<std::multimap<UINT64, CLIENT*>::iterator, std::multimap<UINT64, CLIENT*>::iterator> temp = FindMemberFriendReq(g_iLoginClientID);
+		std::pair<std::multimap<UINT64, CLIENT*>::iterator, std::multimap<UINT64, CLIENT*>::iterator> temp1 = FindMemberFriendRes(TargetClientID);
+		BOOL Flag = false;
+		for (std::multimap<UINT64, CLIENT*>::iterator itor = temp.first; itor != temp.second; itor++)
+		{
+			if (itor->second->ID == TargetClientID)
+			{
+				MemberReqFriendMap.erase(itor);
+				for (std::multimap<UINT64, CLIENT*>::iterator itor1 = temp1.first; itor1 != temp1.second; itor1++)
+				{
+					if (itor1->second->ID == g_iLoginClientID)
+					{
+						MemberResFriendMap.erase(itor1);
+						break;
+					}
+				}
+				Flag = TRUE;
+				break;
+			}
+		}
+		if (Flag == TRUE)
+		{
+			NetWork_ResFriendReqRemove(session, df_RESULT_FRIEND_CANCEL_OK, TargetClientID);
+			return true;
+		}
+		else
+		{
+			NetWork_ResFriendReqRemove(session, df_RESULT_FRIEND_CANCEL_NOTFRIEND, TargetClientID);
+			return true;
+		}
+	}
+}
+
+bool NetWork_ReqFriendReqDeny(SESSION* session, CMessage* message)
+{
+	UINT64 TargetClientID;
+	(*message) >> TargetClientID;
+	if (g_iLoginClientID == 0)
+	{
+		NetWork_ResFriendReqDeny(session, df_RESULT_FRIEND_DENY_FAIL, TargetClientID);
+		return true;
+	}
+	CLIENT* temp = FindMember(TargetClientID);
+	if (temp == nullptr)
+	{
+		NetWork_ResFriendReqDeny(session, df_RESULT_FRIEND_DENY_FAIL, TargetClientID);
+		return true;
+	}
+	else
+	{
+		std::pair<std::multimap<UINT64, CLIENT*>::iterator, std::multimap<UINT64, CLIENT*>::iterator> temp = FindMemberFriendReq(g_iLoginClientID);
+		BOOL Flag = false;
+		for (std::multimap<UINT64, CLIENT*>::iterator itor = temp.first; itor != temp.second; itor++)
+		{
+			if (itor->second->ID == TargetClientID)
+			{
+				MemberReqFriendMap.erase(itor);
+				Flag = TRUE;
+				break;
+			}
+		}
+		if (Flag == TRUE)
+		{
+			std::pair<std::multimap<UINT64, CLIENT*>::iterator, std::multimap<UINT64, CLIENT*>::iterator> temp2 = FindMemberFriendRes(TargetClientID);
+			for (std::multimap<UINT64, CLIENT*>::iterator itor = temp.first; itor != temp.second; itor++)
+			{
+				if (itor->second->ID == g_iLoginClientID)
+				{
+					MemberReqFriendMap.erase(itor);
+					break;
+				}
+			}
+			NetWork_ResFriendReqDeny(session, df_RESULT_FRIEND_DENY_OK, TargetClientID);
+			return true;
+		}
+		else
+		{
+			NetWork_ResFriendReqDeny(session, df_RESULT_FRIEND_DENY_NOTFRIEND, TargetClientID);
+			return true;
+		}
+	}
+}
+
+bool NetWork_ReqFriendReqAgree(SESSION* session, CMessage* message)
+{
+	UINT64 TargetClientID;
+	(*message) >> TargetClientID;
+	if (g_iLoginClientID == 0)
+	{
+		NetWork_ResFriendReqAgree(session, df_RESULT_FRIEND_AGREE_FAIL, TargetClientID);
+		return true;
+	}
+	CLIENT* pTargetClient = FindMember(TargetClientID);
+	if (pTargetClient == nullptr)
+	{
+		NetWork_ResFriendReqAgree(session, df_RESULT_FRIEND_AGREE_FAIL, TargetClientID);
+		return true;
+	}
+	else
+	{
+		std::pair<std::multimap<UINT64, CLIENT*>::iterator, std::multimap<UINT64, CLIENT*>::iterator> temp = FindMemberFriendRes(g_iLoginClientID);
+		BOOL Flag = false;
+		for (std::multimap<UINT64, CLIENT*>::iterator itor = temp.first; itor != temp.second; itor++)
+		{
+			if (itor->second->ID == TargetClientID)
+			{
+				MemberReqFriendMap.erase(itor);
+				Flag = TRUE;
+				break;
+			}
+		}
+		if (Flag == TRUE)
+		{
+			std::pair<std::multimap<UINT64, CLIENT*>::iterator, std::multimap<UINT64, CLIENT*>::iterator> temp2 = FindMemberFriendReq(TargetClientID);
+			for (std::multimap<UINT64, CLIENT*>::iterator itor = temp.first; itor != temp.second; itor++)
+			{
+				if (itor->second->ID == g_iLoginClientID)
+				{
+					MemberReqFriendMap.erase(itor);
+					break;
+				}
+			}
+			MemberFriendMap.insert(std::make_pair(g_iLoginClientID, pTargetClient));
+			MemberFriendMap.insert(std::make_pair(TargetClientID, FindMember(g_iLoginClientID)));
+			NetWork_ResFriendReqAgree(session, df_RESULT_FRIEND_AGREE_OK, TargetClientID);
+			return true;
+		}
+		else
+		{
+			NetWork_ResFriendReqAgree(session, df_RESULT_FRIEND_DENY_NOTFRIEND, TargetClientID);
+			return true;
+		}
+	}
+}
+
 void NetWork_ResRegister(SESSION* session, WORD byResult, UINT64 pClientID)
 {
 	CMessage packet;
@@ -700,6 +1057,76 @@ void NetWork_ResFriendList(SESSION* session)
 	SendPacket_Unicast(session, &header, &packet);
 }
 
+void NetWork_ResFriendReqList(SESSION* session)
+{
+	CMessage packet;
+	st_PACKET_HEADER header;
+	if (g_iLoginClientID <= 0)
+	{
+		MakePacket_ResFriendReqList(&header, &packet, FALSE);
+	}
+	else
+	{
+		MakePacket_ResFriendReqList(&header, &packet, TRUE);
+	}
+	SendPacket_Unicast(session, &header, &packet);
+}
+
+void NetWork_ResFriendResList(SESSION* session)
+{
+	CMessage packet;
+	st_PACKET_HEADER header;
+	if (g_iLoginClientID <= 0)
+	{
+		MakePacket_ResFriendResList(&header, &packet, FALSE);
+	}
+	else
+	{
+		MakePacket_ResFriendResList(&header, &packet, TRUE);
+	}
+	SendPacket_Unicast(session, &header, &packet);
+}
+
+void NetWork_ResFriendRemove(SESSION* session, BYTE result, UINT64 ClientID)
+{
+	CMessage packet;
+	st_PACKET_HEADER header;
+	MakePacket_ResFriendRemove(&header, &packet, result, ClientID);
+	SendPacket_Unicast(session, &header, &packet);
+}
+
+void NetWork_ResFriendReq(SESSION* session, BYTE result, UINT64 ClientID)
+{
+	CMessage packet;
+	st_PACKET_HEADER header;
+	MakePacket_ResFriendReq(&header, &packet, result, ClientID);
+	SendPacket_Unicast(session, &header, &packet);
+}
+
+void NetWork_ResFriendReqRemove(SESSION* session, BYTE result, UINT64 ClientID)
+{
+	CMessage packet;
+	st_PACKET_HEADER header;
+	MakePacket_ResFriendReqRemove(&header, &packet, result, ClientID);
+	SendPacket_Unicast(session, &header, &packet);
+}
+
+void NetWork_ResFriendReqDeny(SESSION* session, BYTE result, UINT64 ClientID)
+{
+	CMessage packet;
+	st_PACKET_HEADER header;
+	MakePacket_ResFriendReqDeny(&header, &packet, result, ClientID);
+	SendPacket_Unicast(session, &header, &packet);
+}
+
+void NetWork_ResFriendReqAgree(SESSION* session, BYTE result, UINT64 ClientID)
+{
+	CMessage packet;
+	st_PACKET_HEADER header;
+	MakePacket_ResFriendReqAgree(&header, &packet, result, ClientID);
+	SendPacket_Unicast(session, &header, &packet);
+}
+
 void MakePacket_ResRegister(st_PACKET_HEADER* pHeader, CMessage* message, WORD result, UINT64 ID)
 {
 	(*message) << (long long)ID;
@@ -730,7 +1157,7 @@ void MakePacket_ResAccountList(st_PACKET_HEADER* pHeader, CMessage* message)
 {
 	UINT size = MemberMap.size();
 	(*message) << (int)size;
-	for (std::unordered_map<DWORD, CLIENT*>::iterator itor = MemberMap.begin(); itor != MemberMap.end(); itor++)
+	for (std::unordered_map<UINT64, CLIENT*>::iterator itor = MemberMap.begin(); itor != MemberMap.end(); itor++)
 	{
 		UINT64 id = itor->first;
 		(*message) << (long long)id;
@@ -750,15 +1177,102 @@ void MakePacket_ResFriendList(st_PACKET_HEADER* pHeader, CMessage* message, BOOL
 		for (std::multimap<UINT64, CLIENT*>::iterator itor = temp.first; itor != temp.second; itor++)
 		{
 			(*message) << (long long)itor->first;
-			message->PutData((char*)itor->second, 40);
+			message->PutData((char*)itor->second->NickName, 40);
 		}
 	}
 	else
 	{
-		(*message) << (int)0;
+		//(*message) << (int)0;
 	}
 	pHeader->byCode = dfPACKET_CODE;
 	pHeader->wMsgType = df_RES_FRIEND_LIST;
+	pHeader->wPayloadSize = message->GetDataSize();
+}
+
+void MakePacket_ResFriendReqList(st_PACKET_HEADER* pHeader, CMessage* message, BOOL isLogined)
+{
+	if (isLogined == TRUE)
+	{
+		std::pair<std::multimap<UINT64, CLIENT*>::iterator, std::multimap<UINT64, CLIENT*>::iterator> temp = FindMemberFriendReq(g_iLoginClientID);
+		(*message) << (int)MemberReqFriendMap.count(g_iLoginClientID);
+		for (std::multimap<UINT64, CLIENT*>::iterator itor = temp.first; itor != temp.second; itor++)
+		{
+			(*message) << (long long)itor->first;
+			message->PutData((char*)itor->second->NickName, 40);
+		}
+	}
+	else
+	{
+		//(*message) << (int)0;
+	}
+	pHeader->byCode = dfPACKET_CODE;
+	pHeader->wMsgType = df_RES_FRIEND_REQUEST_LIST;
+	pHeader->wPayloadSize = message->GetDataSize();
+}
+
+void MakePacket_ResFriendResList(st_PACKET_HEADER* pHeader, CMessage* message, BOOL isLogined)
+{
+	if (isLogined == TRUE)
+	{
+		std::pair<std::multimap<UINT64, CLIENT*>::iterator, std::multimap<UINT64, CLIENT*>::iterator> temp = FindMemberFriendRes(g_iLoginClientID);
+		(*message) << (int)MemberResFriendMap.count(g_iLoginClientID);
+		for (std::multimap<UINT64, CLIENT*>::iterator itor = temp.first; itor != temp.second; itor++)
+		{
+			(*message) << (long long)itor->first;
+			message->PutData((char*)itor->second->NickName, 40);
+		}
+	}
+	else
+	{
+		//(*message) << (int)0;
+	}
+	pHeader->byCode = dfPACKET_CODE;
+	pHeader->wMsgType = df_RES_FRIEND_REPLY_LIST;
+	pHeader->wPayloadSize = message->GetDataSize();
+}
+
+void MakePacket_ResFriendRemove(st_PACKET_HEADER* pHeader, CMessage* message, BYTE result, UINT64 ClientID)
+{
+	(*message) << (double)ClientID;
+	(*message) << result;
+	pHeader->byCode = dfPACKET_CODE;
+	pHeader->wMsgType = df_RES_FRIEND_REMOVE;
+	pHeader->wPayloadSize = message->GetDataSize();
+}
+
+void MakePacket_ResFriendReq(st_PACKET_HEADER* pHeader, CMessage* message, BYTE result, UINT64 ClientID)
+{
+	(*message) << (double)ClientID;
+	(*message) << result;
+	pHeader->byCode = dfPACKET_CODE;
+	pHeader->wMsgType = df_RES_FRIEND_REQUEST;
+	pHeader->wPayloadSize = message->GetDataSize();
+}
+
+void MakePacket_ResFriendReqRemove(st_PACKET_HEADER* pHeader, CMessage* message, BYTE result, UINT64 ClientID)
+{
+	(*message) << (double)ClientID;
+	(*message) << result;
+	pHeader->byCode = dfPACKET_CODE;
+	pHeader->wMsgType = df_RES_FRIEND_CANCEL;
+	pHeader->wPayloadSize = message->GetDataSize();
+}
+
+void MakePacket_ResFriendReqDeny(st_PACKET_HEADER* pHeader, CMessage* message, BYTE result, UINT64 ClientID)
+{
+	(*message) << (double)ClientID;
+	(*message) << result;
+	pHeader->byCode = dfPACKET_CODE;
+	pHeader->wMsgType = df_RES_FRIEND_DENY;
+	pHeader->wPayloadSize = message->GetDataSize();
+}
+
+void MakePacket_ResFriendReqAgree(st_PACKET_HEADER* pHeader, CMessage* message, BYTE result, UINT64 ClientID)
+{
+	(*message) << (double)ClientID;
+	(*message) << result;
+	pHeader->byCode = dfPACKET_CODE;
+	pHeader->wMsgType = df_RES_FRIEND_AGREE;
 	pHeader->wPayloadSize = message->GetDataSize();
 }
 

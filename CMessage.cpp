@@ -8,7 +8,7 @@ void CMessage::PutData(char* data, int size)
 	{
 		while (realSize < 0)
 		{
-			IncreaseBufferSize(eBUFFER_UPSCALE_BYTE);
+			IncreaseBufferSize(size);
 			realSize = GetFreeSize() - size;
 		}
 	}
@@ -85,9 +85,9 @@ CMessage& CMessage::operator<<(BYTE byValue)
 		m_iUsingSize += realSize;
 		m_iRear += realSize;
 
-		// TODO: 여기에 메모리를 다시 늘리고 예외 객체 throw
-		CExceptClass* Except = new CExceptClass(L"<< BYTE ERROR", m_cpBuffer, m_iMaxSize);
-		throw Except;
+		//// TODO: 여기에 메모리를 다시 늘리고 예외 객체 throw
+		//CExceptClass* Except = new CExceptClass(L"<< BYTE ERROR", m_cpBuffer, m_iMaxSize);
+		//throw Except;
 	}
 
 	realSize = sizeof(byValue);
@@ -116,9 +116,9 @@ CMessage& CMessage::operator<<(char chValue)
 		m_iUsingSize += realSize;
 		m_iRear += realSize;
 
-		// TODO: 여기에 메모리를 다시 늘리고 예외 객체 throw
-		CExceptClass* Except = new CExceptClass(L"<< CHAR ERROR", m_cpBuffer, m_iMaxSize);
-		throw Except;
+		//// TODO: 여기에 메모리를 다시 늘리고 예외 객체 throw
+		//CExceptClass* Except = new CExceptClass(L"<< CHAR ERROR", m_cpBuffer, m_iMaxSize);
+		//throw Except;
 	}
 
 	realSize = sizeof(chValue);
@@ -147,9 +147,9 @@ CMessage& CMessage::operator<<(short shValue)
 		m_iUsingSize += realSize;
 		m_iRear += realSize;
 
-		// TODO: 여기에 메모리를 다시 늘리고 예외 객체 throw
-		CExceptClass* Except = new CExceptClass(L"<< SHORT ERROR", m_cpBuffer, m_iMaxSize);
-		throw Except;
+		//// TODO: 여기에 메모리를 다시 늘리고 예외 객체 throw
+		//CExceptClass* Except = new CExceptClass(L"<< SHORT ERROR", m_cpBuffer, m_iMaxSize);
+		//throw Except;
 	}
 
 	realSize = sizeof(shValue);
@@ -178,9 +178,9 @@ CMessage& CMessage::operator<<(WORD wValue)
 		m_iUsingSize += realSize;
 		m_iRear += realSize;
 
-		// TODO: 여기에 메모리를 다시 늘리고 예외 객체 throw
-		CExceptClass* Except = new CExceptClass(L"<< WORD ERROR", m_cpBuffer, m_iMaxSize);
-		throw Except;
+		//// TODO: 여기에 메모리를 다시 늘리고 예외 객체 throw
+		//CExceptClass* Except = new CExceptClass(L"<< WORD ERROR", m_cpBuffer, m_iMaxSize);
+		//throw Except;
 	}
 
 	realSize = sizeof(wValue);
@@ -209,9 +209,9 @@ CMessage& CMessage::operator<<(int iValue)
 		m_iUsingSize += realSize;
 		m_iRear += realSize;
 
-		// TODO: 여기에 메모리를 다시 늘리고 예외 객체 throw
-		CExceptClass* Except = new CExceptClass(L"<< INT ERROR", m_cpBuffer, m_iMaxSize);
-		throw Except;
+		//// TODO: 여기에 메모리를 다시 늘리고 예외 객체 throw
+		//CExceptClass* Except = new CExceptClass(L"<< INT ERROR", m_cpBuffer, m_iMaxSize);
+		//throw Except;
 	}
 
 	realSize = sizeof(iValue);
@@ -240,9 +240,10 @@ CMessage& CMessage::operator<<(DWORD dwValue)
 		m_iUsingSize += realSize;
 		m_iRear += realSize;
 
-		// TODO: 여기에 메모리를 다시 늘리고 예외 객체 throw
-		CExceptClass* Except = new CExceptClass(L"<< DWORD ERROR", m_cpBuffer, m_iMaxSize);
-		throw Except;
+		//// TODO: 여기에 메모리를 다시 늘리고 예외 객체 throw
+		//CExceptClass* Except = new CExceptClass(L"<< DWORD ERROR", m_cpBuffer, m_iMaxSize);
+		//throw Except;
+		return *this;
 	}
 
 	realSize = sizeof(dwValue);
@@ -271,9 +272,10 @@ CMessage& CMessage::operator<<(float fValue)
 		m_iUsingSize += realSize;
 		m_iRear += realSize;
 
-		// TODO: 여기에 메모리를 다시 늘리고 예외 객체 throw
-		CExceptClass* Except = new CExceptClass(L"<< FLOAT ERROR", m_cpBuffer, m_iMaxSize);
-		throw Except;
+		//// TODO: 여기에 메모리를 다시 늘리고 예외 객체 throw
+		//CExceptClass* Except = new CExceptClass(L"<< FLOAT ERROR", m_cpBuffer, m_iMaxSize);
+		//throw Except;
+		return *this;
 	}
 
 	realSize = sizeof(fValue);
@@ -302,9 +304,10 @@ CMessage& CMessage::operator<<(__int64 iValue)
 		m_iUsingSize += realSize;
 		m_iRear += realSize;
 
-		// TODO: 여기에 메모리를 다시 늘리고 예외 객체 throw
-		CExceptClass* Except = new CExceptClass(L"<< INT64 ERROR", m_cpBuffer, m_iMaxSize);
-		throw Except;
+		//// TODO: 여기에 메모리를 다시 늘리고 예외 객체 throw
+		//CExceptClass* Except = new CExceptClass(L"<< INT64 ERROR", m_cpBuffer, m_iMaxSize);
+		//throw Except;
+		return *this;
 	}
 
 	realSize = sizeof(iValue);
