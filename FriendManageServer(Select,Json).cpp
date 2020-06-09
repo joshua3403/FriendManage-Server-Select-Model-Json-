@@ -53,9 +53,10 @@ int g_iSessionID = 1;
 int g_iClientID = 1;
 // 로그인한 클라이언트의 ID
 int g_iLoginClientID = 0;
+int g_JsonSize = 0;
 
 // 서버에 접속된 모든 client를 관리하는 Map
-std::list<SESSION*> ClientList;
+std::map<DWORD,SESSION*> ClientList;
 // 회원가입된 회원을 관리하는 Map
 std::unordered_map<UINT64, CLIENT*> MemberMap;
 // 가입된 회원들의 친구리스트를 관리하는 multimap
@@ -70,7 +71,7 @@ bool InitialNetwork(void);
 // 네트워크 로직이 돌아가는 함수(select)
 void NetWorkPart(void);
 // 네트워크 로직 안에서 실질적으로 select함수를 호출하는 함수
-void SelectSocket(std::vector<int> dwTableNO, std::vector<SOCKET> pTableSocket, FD_SET* pReadSet, FD_SET* pWriteSet);
+void SelectSocket(std::vector<DWORD> dwTableNO, std::vector<SOCKET> pTableSocket, FD_SET* pReadSet, FD_SET* pWriteSet);
 // 클라이언트의 connect() 요청을 accpet()하는 함수
 void Accept();
 // 해당 소켓에 recv하는 함수
@@ -86,6 +87,12 @@ void NetWork_Send(DWORD UserID);
 // 실질적인 패킷 처리 함수
 bool PacketProc(SESSION* session, WORD dwType, CMessage* message);
 
+// 현재까지의 모든 데이터들을 json을 이용해 파일형태로 저장하는 함수
+void SaveAllData(void);
+
+// 세이브된 데이터를 가져오는 함수
+void LoadAllData(void);
+
 // 패킷 대응 함수
 // 클라이언트의 요청
 bool NetWork_ReqRegister(SESSION* session, CMessage* message);
@@ -99,6 +106,7 @@ bool NetWork_ReqFriendReq(SESSION* session, CMessage* message);
 bool NetWork_ReqFriendRedRemove(SESSION* session, CMessage* message);
 bool NetWork_ReqFriendReqDeny(SESSION* session, CMessage* message);
 bool NetWork_ReqFriendReqAgree(SESSION* session, CMessage* message);
+bool NetWork_ReqEcho(SESSION* session, CMessage* message);
 
 // 서버의 응답
 void NetWork_ResRegister(SESSION* session, WORD Result, UINT64 pClientID);
@@ -112,6 +120,7 @@ void NetWork_ResFriendReq(SESSION* session, BYTE result, UINT64 ClientID);
 void NetWork_ResFriendReqRemove(SESSION* session, BYTE result, UINT64 ClientID);
 void NetWork_ResFriendReqDeny(SESSION* session, BYTE result, UINT64 ClientID);
 void NetWork_ResFriendReqAgree(SESSION* session, BYTE result, UINT64 ClientID);
+void NetWork_ResEcho(SESSION* session, CMessage* message);
 
 // 패킷 만드는 함수
 void MakePacket_ResRegister(st_PACKET_HEADER* pHeader, CMessage* message, WORD result, UINT64 ID);
@@ -125,6 +134,7 @@ void MakePacket_ResFriendReq(st_PACKET_HEADER* pHeader, CMessage* message, BYTE 
 void MakePacket_ResFriendReqRemove(st_PACKET_HEADER* pHeader, CMessage* message, BYTE result, UINT64 ClientID);
 void MakePacket_ResFriendReqDeny(st_PACKET_HEADER* pHeader, CMessage* message, BYTE result, UINT64 ClientID);
 void MakePacket_ResFriendReqAgree(st_PACKET_HEADER* pHeader, CMessage* message, BYTE result, UINT64 ClientID);
+void MakePacket_ResEcho(st_PACKET_HEADER* pHeader, CMessage* message, CMessage* text);
 
 // ClientList에서 ID를 key로 SESSION*를 반환하는 함수
 SESSION* FindSession(DWORD id);
@@ -176,6 +186,8 @@ int main()
 {
 	setlocale(LC_ALL, "");
 	InitialLogFile();
+	//LoadAllData();
+
 
 	if (!InitialNetwork())
 	{
@@ -186,8 +198,13 @@ int main()
 	while (true)
 	{
 		NetWorkPart();
+		if (GetAsyncKeyState(VK_SPACE) & 0x8000)
+		{
+			//SaveAllData();
+			CloseAllSession();
+			break;
+		}
 	}
-
 	CloseAllSession();
 	return 0;
 }
@@ -256,23 +273,25 @@ void NetWorkPart(void)
 
 	int addrlen, retval;
 	int iSessionCount = 0;
-	std::vector<int> clientID(FD_SETSIZE);
+	std::vector<DWORD> clientID(FD_SETSIZE);
 	std::vector<SOCKET> clientSocket(FD_SETSIZE);
 	FD_ZERO(&readSet);
 	FD_ZERO(&writeSet);
 
-	// 리슨 소켓 넣기
+	 //리슨 소켓 넣기
 	FD_SET(listen_socket, &readSet);
 	clientID[iSessionCount] = 0;
 	clientSocket[iSessionCount] = listen_socket;
 	iSessionCount++;
-	std::list<SESSION*>::iterator itor;
+	std::map<DWORD,SESSION*>::iterator itor;
 
 	DeleteClient();
 
+	//wprintf(L"%d\n", (int)ClientList.size());
+
 	for (itor = ClientList.begin(); itor != ClientList.end();)
 	{
-		pSession = (*itor);
+		pSession = (itor->second);
 		itor++;
 
 		clientID[iSessionCount] = pSession->ID;
@@ -476,10 +495,9 @@ void PrintError(const WCHAR* error)
 
 void CloseAllSession()
 {
-	for (std::list<SESSION*>::iterator itor = ClientList.begin(); itor != ClientList.end(); itor++)
+	for (std::map<DWORD, SESSION*>::iterator itor = ClientList.begin(); itor != ClientList.end(); itor++)
 	{
-		closesocket((*itor)->socket);
-		delete (*itor);
+		closesocket((itor)->second->socket);
 	}
 	ClientList.clear();
 
@@ -490,7 +508,7 @@ void CloseAllSession()
 	MemberFriendMap.clear();
 }
 
-void SelectSocket(std::vector<int> dwTableNO, std::vector<SOCKET> pTableSocket, FD_SET* pReadSet, FD_SET* pWriteSet)
+void SelectSocket(std::vector<DWORD> dwTableNO, std::vector<SOCKET> pTableSocket, FD_SET* pReadSet, FD_SET* pWriteSet)
 {
 	SESSION* pSession = nullptr;
 	int iResult = 0;
@@ -543,7 +561,7 @@ void Accept()
 	clientSessionPtr->clientaddr = clientaddr;
 	clientSessionPtr->ID = g_iSessionID++;
 	InetNtop(AF_INET, &clientaddr.sin_addr, szParam, 16);
-	wprintf(L"\n[FriendManage 서버] 클라이언트 접속 : IP 주소 %s, 포트 번호 = %d\n", szParam, ntohs(clientaddr.sin_port));
+	wprintf(L"\n[FriendManage 서버] 클라이언트 접속 : IP 주소 %s, 포트 번호 = %d, 세션 ID : %d\n", szParam, ntohs(clientaddr.sin_port), g_iSessionID - 1);
 	AddSession(clientSessionPtr);
 }
 
@@ -571,7 +589,6 @@ void NetWork_Recv(DWORD UserID)
 	if (iResult == SOCKET_ERROR || iResult == 0)
 	{
 		Disconnect(UserID);
-		wprintf(L"%d\n", (int)ClientList.size());
 		return;
 	}
 
@@ -605,17 +622,19 @@ void Disconnect(DWORD UserID)
 
 	wprintf(L"\n[Select 서버] 클라이언트 종료 : IP 주소 %s, 포트 번호 = %d\n", szParam, ntohs(pSession->clientaddr.sin_port));
 	closesocket(pSession->socket);
+	pSession->socket = INVALID_SOCKET;
 }
 
 void DeleteClient()
 {
-	std::list<SESSION*>::iterator itor;
+	std::map<DWORD, SESSION*>::iterator itor;
 	for (itor = ClientList.begin(); itor != ClientList.end();)
 	{
-		if ((*itor)->socket == INVALID_SOCKET)
+		if ((itor)->second->socket == INVALID_SOCKET)
 		{
-			int temp = (*itor)->ID;
-			free((*itor));
+			wprintf(L"Client Delete ID %d\n", itor->first);
+			int temp = (itor)->second->ID;
+			free((itor)->second);
 			itor = ClientList.erase(itor);
 		}
 		else
@@ -697,7 +716,7 @@ void NetWork_Send(DWORD UserID)
 
 bool PacketProc(SESSION* session, WORD dwType, CMessage* message)
 {
-	wprintf(L"Packet Info UserID : %d, Message Type : %d\n", session->ID, dwType);
+	//wprintf(L"Packet Info UserID : %d, Message Type : %d\n", session->ID, dwType);
 	switch (dwType)
 	{
 	case df_REQ_ACCOUNT_ADD:
@@ -732,10 +751,96 @@ bool PacketProc(SESSION* session, WORD dwType, CMessage* message)
 	case df_REQ_FRIEND_AGREE:
 		return NetWork_ReqFriendReqAgree(session, message);
 		break;
+	case df_REQ_STRESS_ECHO:
+		return NetWork_ReqEcho(session, message);
+		break;
 	default:
 		break;
 	}
 	return false;
+}
+
+void SaveAllData(void)
+{
+	FILE* pFile = nullptr;
+	pFile = fopen("Json.txt", "wb");
+	if (pFile == nullptr)
+	{
+		wprintf(L"File open fail\n");
+		return;
+	}
+
+	rapidjson::StringBuffer StringJson;
+	rapidjson::Writer<rapidjson::StringBuffer, rapidjson::UTF16<>> writer(StringJson);
+	//rapidjson::Writer<rapidjson::GenericStringBuffer<rapidjson::UTF16<>>, rapidjson::UTF16<>, rapidjson::UTF16<>> writer(temp);
+
+	writer.StartObject();
+	writer.String(L"Member");
+	writer.StartArray();
+
+	for (std::unordered_multimap< UINT64, CLIENT*>::iterator itor = MemberMap.begin(); itor != MemberMap.end(); itor++)
+	{
+		writer.StartObject();
+		writer.String(L"AccountNO");
+		writer.Uint64(itor->first);
+		writer.String(L"NickName");
+		writer.String(itor->second->NickName);
+		writer.EndObject();
+	}
+	writer.EndArray();
+	writer.EndObject();
+
+	g_JsonSize = StringJson.GetSize();
+	const char* pJson = StringJson.GetString();
+
+	fwrite(pJson, g_JsonSize, 1, pFile);
+	fclose(pFile);
+}
+
+void LoadAllData(void)
+{
+	FILE* pFile = fopen("Json.txt", "rb");
+	if (pFile == nullptr)
+	{
+		wprintf(L"File load failed\n");
+		return;
+	}
+	fseek(pFile, 0, SEEK_END);
+	int lSize = ftell(pFile);
+	rewind(pFile);
+
+	char* buffer = (char*)malloc(sizeof(char) * lSize + 1);
+
+	int result = fread(buffer, 1, lSize, pFile);
+	if (result != lSize)
+		return;
+
+	buffer[lSize] = 0;
+
+	rapidjson::Document Doc;
+	Doc.Parse(buffer);
+	if (Doc.HasParseError())
+		return;
+
+	UINT64 AccountNo;
+
+	rapidjson::Value& AccountArray = Doc["Member"];
+	WCHAR szNickName[dfNICK_MAX_LEN];
+	for (rapidjson::SizeType i = 0; i < AccountArray.Size(); i++)
+	{
+		rapidjson::Value& AccountObejct = AccountArray[i];
+		AccountNo = AccountObejct["AccountNO"].GetUint64();
+		int len = MultiByteToWideChar(CP_UTF8, 0, AccountObejct["NickName"].GetString(), strlen(AccountObejct["NickName"].GetString()), szNickName, 100);
+		szNickName[len] = L'\0';
+		CLIENT* newClient = new CLIENT();
+		newClient->ID = AccountNo;
+		memcpy(newClient->NickName, szNickName, dfNICK_MAX_LEN);
+		MemberMap.insert({ AccountNo,  newClient });
+	}
+
+	fclose(pFile);
+	free(buffer);
+	return;
 }
 
 bool NetWork_ReqRegister(SESSION* session, CMessage* message)
@@ -1015,6 +1120,12 @@ bool NetWork_ReqFriendReqAgree(SESSION* session, CMessage* message)
 	}
 }
 
+bool NetWork_ReqEcho(SESSION* session, CMessage* message)
+{
+	NetWork_ResEcho(session, message);
+	return true;
+}
+
 void NetWork_ResRegister(SESSION* session, WORD byResult, UINT64 pClientID)
 {
 	CMessage packet;
@@ -1124,6 +1235,14 @@ void NetWork_ResFriendReqAgree(SESSION* session, BYTE result, UINT64 ClientID)
 	CMessage packet;
 	st_PACKET_HEADER header;
 	MakePacket_ResFriendReqAgree(&header, &packet, result, ClientID);
+	SendPacket_Unicast(session, &header, &packet);
+}
+
+void NetWork_ResEcho(SESSION* session, CMessage* message)
+{
+	CMessage packet;
+	st_PACKET_HEADER header;
+	MakePacket_ResEcho(&header, &packet, message);
 	SendPacket_Unicast(session, &header, &packet);
 }
 
@@ -1276,23 +1395,27 @@ void MakePacket_ResFriendReqAgree(st_PACKET_HEADER* pHeader, CMessage* message, 
 	pHeader->wPayloadSize = message->GetDataSize();
 }
 
+void MakePacket_ResEcho(st_PACKET_HEADER* pHeader, CMessage* message, CMessage* text)
+{
+	WORD size = 0;
+	(*text) >> size;
+	(*message) << size;
+	message->PutData((char*)text->GetBufferPtr() + 2, size);
+	pHeader->byCode = dfPACKET_CODE;
+	pHeader->wMsgType = df_RES_STRESS_ECHO;
+	pHeader->wPayloadSize = message->GetDataSize();
+}
+
 SESSION* FindSession(DWORD id)
 {
 	SESSION* pSession = nullptr;
 
-	for (std::list<SESSION*>::iterator itor = ClientList.begin(); itor != ClientList.end(); itor++)
-	{
-		if ((*itor)->ID == id)
-		{
-			pSession = (*itor);
-			break;
-		}
-	}
+	pSession = ClientList.find(id)->second;
 
 	return pSession;
 }
 
 void AddSession(SESSION* session)
 {
-	ClientList.push_back(session);
+	ClientList.insert(std::make_pair(session->ID, session));
 }

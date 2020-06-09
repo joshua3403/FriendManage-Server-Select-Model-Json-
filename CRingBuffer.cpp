@@ -7,6 +7,10 @@ CRingBuffer::CRingBuffer()
 	_iBufferSize = BUFSIZE;
 	_iFront = _iRear = _iUsingSize = 0;
 	_cBufferArray = (char*)malloc(BUFSIZE);
+	if (_cBufferArray == nullptr)
+	{
+		wprintf(L"malloc error\n");
+	}
 }
 
 CRingBuffer::~CRingBuffer(void)
