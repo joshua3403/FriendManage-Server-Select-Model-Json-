@@ -2,7 +2,7 @@
 #include "stdafx.h"
 
 
-#define BUFSIZE 1000
+#define BUFSIZE 10000
 
 
 class CRingBuffer

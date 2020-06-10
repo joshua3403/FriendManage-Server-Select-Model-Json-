@@ -135,12 +135,22 @@ int CRingBuffer::Dequeue(char* dest, int size)
 
 int CRingBuffer::DirectEnqueueSize(void)
 {
-	return _iBufferSize - _iRear;
+	if (_iRear >= _iFront)
+		return _iBufferSize - _iRear;
+	else
+		return _iFront - _iRear;
 }
 
 int CRingBuffer::DirectDequeueSize(void)
 {
-	return _iBufferSize - _iFront;
+	if (_iRear >= _iFront)
+	{
+		return _iRear - _iFront;
+	}
+	else
+	{
+		return _iBufferSize - _iFront;
+	}
 }
 
 int CRingBuffer::Peek(char* dest, int size)

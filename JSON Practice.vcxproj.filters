@@ -41,9 +41,6 @@
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="Main%28char%29.cpp">
-      <Filter>소스 파일</Filter>
-    </ClCompile>
     <ClCompile Include="FriendManageServer(Select,Json).cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>

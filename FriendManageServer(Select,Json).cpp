@@ -1,3 +1,4 @@
+#pragma comment(lib, "ws2_32")
 #include "stdafx.h"
 #include "Protocol.h"
 #include "CRingBuffer.h"
@@ -71,7 +72,7 @@ bool InitialNetwork(void);
 // 네트워크 로직이 돌아가는 함수(select)
 void NetWorkPart(void);
 // 네트워크 로직 안에서 실질적으로 select함수를 호출하는 함수
-void SelectSocket(std::vector<DWORD> dwTableNO, std::vector<SOCKET> pTableSocket, FD_SET* pReadSet, FD_SET* pWriteSet);
+void SelectSocket(DWORD* dwTableNO, SOCKET* pTableSocket, FD_SET* pReadSet, FD_SET* pWriteSet);
 // 클라이언트의 connect() 요청을 accpet()하는 함수
 void Accept();
 // 해당 소켓에 recv하는 함수
@@ -197,7 +198,9 @@ int main()
 
 	while (true)
 	{
+
 		NetWorkPart();
+		
 		if (GetAsyncKeyState(VK_SPACE) & 0x8000)
 		{
 			//SaveAllData();
@@ -273,8 +276,10 @@ void NetWorkPart(void)
 
 	int addrlen, retval;
 	int iSessionCount = 0;
-	std::vector<DWORD> clientID(FD_SETSIZE);
-	std::vector<SOCKET> clientSocket(FD_SETSIZE);
+	DWORD clientID[FD_SETSIZE];
+	SOCKET clientSocket[FD_SETSIZE];
+	memset(clientID, -1, FD_SETSIZE*sizeof(DWORD));
+	memset(clientSocket, INVALID_SOCKET, FD_SETSIZE*sizeof(SOCKET));
 	FD_ZERO(&readSet);
 	FD_ZERO(&writeSet);
 
@@ -285,7 +290,7 @@ void NetWorkPart(void)
 	iSessionCount++;
 	std::map<DWORD,SESSION*>::iterator itor;
 
-	DeleteClient();
+	//DeleteClient();
 
 	//wprintf(L"%d\n", (int)ClientList.size());
 
@@ -293,7 +298,12 @@ void NetWorkPart(void)
 	{
 		pSession = (itor->second);
 		itor++;
-
+		if (pSession->socket == INVALID_SOCKET)
+		{
+			ClientList.erase(pSession->ID);
+			delete pSession;
+			continue;
+		}
 		clientID[iSessionCount] = pSession->ID;
 		clientSocket[iSessionCount] = pSession->socket;
 
@@ -309,8 +319,8 @@ void NetWorkPart(void)
 			SelectSocket(clientID, clientSocket, &readSet, &writeSet);
 			FD_ZERO(&readSet);
 			FD_ZERO(&writeSet);
-			clientID.assign(64, 0);
-			clientSocket.assign(64, INVALID_SOCKET);
+			memset(clientID, -1, FD_SETSIZE * sizeof(DWORD));
+			memset(clientSocket, INVALID_SOCKET, FD_SETSIZE * sizeof(SOCKET));
 			iSessionCount = 0;
 		}
 	}
@@ -508,7 +518,7 @@ void CloseAllSession()
 	MemberFriendMap.clear();
 }
 
-void SelectSocket(std::vector<DWORD> dwTableNO, std::vector<SOCKET> pTableSocket, FD_SET* pReadSet, FD_SET* pWriteSet)
+void SelectSocket(DWORD* dwTableNO,SOCKET* pTableSocket, FD_SET* pReadSet, FD_SET* pWriteSet)
 {
 	SESSION* pSession = nullptr;
 	int iResult = 0;
@@ -561,7 +571,7 @@ void Accept()
 	clientSessionPtr->clientaddr = clientaddr;
 	clientSessionPtr->ID = g_iSessionID++;
 	InetNtop(AF_INET, &clientaddr.sin_addr, szParam, 16);
-	wprintf(L"\n[FriendManage 서버] 클라이언트 접속 : IP 주소 %s, 포트 번호 = %d, 세션 ID : %d\n", szParam, ntohs(clientaddr.sin_port), g_iSessionID - 1);
+	//wprintf(L"\n[FriendManage 서버] 클라이언트 접속 : IP 주소 %s, 포트 번호 = %d, 세션 ID : %d\n", szParam, ntohs(clientaddr.sin_port), g_iSessionID - 1);
 	AddSession(clientSessionPtr);
 }
 
@@ -573,14 +583,15 @@ void NetWork_Recv(DWORD UserID)
 	int iEnqeueSize = 0;
 
 	pSession = FindSession(UserID);
+	if (pSession->socket == INVALID_SOCKET)
+		return;
 
 	// 서버를 꺼야하는 것 아닐까??
 	if (pSession == nullptr)
 		closesocket(listen_socket);
 
-	iRecvBufferFreeSize = pSession->RecvQ.GetFreeSize();
-	char* temp = (char*)malloc(iRecvBufferFreeSize);
-	iResult = recv(pSession->socket, temp, iRecvBufferFreeSize, 0);
+	iRecvBufferFreeSize = pSession->RecvQ.DirectEnqueueSize();
+	iResult = recv(pSession->socket, pSession->RecvQ.GetRearBufferPtr(), iRecvBufferFreeSize, 0);
 
 	if (iResult == SOCKET_ERROR)
 	{
@@ -594,13 +605,13 @@ void NetWork_Recv(DWORD UserID)
 
 	}
 
-	iEnqeueSize = pSession->RecvQ.Enqueue(temp, iResult);
+	pSession->RecvQ.MoveRear(iResult);
 
-	if (iEnqeueSize != iResult)
-	{
-		PrintError(L"FatalError EndQueue");
-		exit(1);
-	}
+	//if (iEnqeueSize != iResult)
+	//{
+	//	PrintError(L"FatalError EndQueue");
+	//	exit(1);
+	//}
 
 	if (iResult > 0)
 	{
@@ -688,39 +699,45 @@ int CompletePacket(SESSION* session)
 
 void NetWork_Send(DWORD UserID)
 {
-	int iResult = 0;
 	SESSION* pSession = nullptr;
+	pSession = FindSession(UserID);
+	int iResult = 0;
 	int iSendBufferUsingSize = 0;
 	int iDequeueSize = 0;
-
-	pSession = FindSession(UserID);
-	if (pSession == nullptr)
-		closesocket(listen_socket);
-
-	iSendBufferUsingSize = pSession->SendQ.GetUsingSize();
-
-	if (iSendBufferUsingSize <= 0)
+	if (pSession->socket == INVALID_SOCKET)
 		return;
-
-	char* temp = (char*)malloc(iSendBufferUsingSize);
-
-	iDequeueSize = pSession->SendQ.Dequeue(temp, iSendBufferUsingSize);
-
-	iResult = send(pSession->socket, temp, iDequeueSize, 0);
-
-	if (iResult == SOCKET_ERROR || iResult == 0)
+	while (true)
 	{
-		DWORD error = WSAGetLastError();
-		if (WSAEWOULDBLOCK == error)
+		if (pSession->SendQ.GetUsingSize() <= 0)
+			break;
+
+		if (pSession == nullptr)
+			closesocket(listen_socket);
+
+		iSendBufferUsingSize = pSession->SendQ.DirectDequeueSize();
+
+		if (iSendBufferUsingSize <= 0)
+			return;
+
+		iResult = send(pSession->socket, pSession->SendQ.GetFrontBufferPtr(), iSendBufferUsingSize, 0);
+
+
+		if (iResult == SOCKET_ERROR || iResult == 0)
 		{
-			wprintf(L"Socket WOULDBLOCK - UerID : %d\n", UserID);
+			DWORD error = WSAGetLastError();
+			if (WSAEWOULDBLOCK == error)
+			{
+				wprintf(L"Socket WOULDBLOCK - UerID : %d\n", UserID);
+				return;
+			}
+			wprintf(L"Socket Error - Error : %d, UserID : %d\n", error, UserID);
+			Disconnect(UserID);
 			return;
 		}
-		wprintf(L"Socket Error - Error : %d, UserID : %d\n", error, UserID);
-		free(temp);
-		Disconnect(UserID);
-		return;
-	}	free(temp);
+
+		pSession->SendQ.MoveFront(iResult);
+
+	}
 
 	return;
 }

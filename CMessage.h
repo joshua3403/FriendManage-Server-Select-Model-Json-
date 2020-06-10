@@ -10,7 +10,7 @@ class CMessage
 	----------------------------------------------------------------*/
 	enum en_PACKET
 	{
-		eBUFFER_DEFAULT = 1000,		// 패킷의 기본 버퍼 사이즈.
+		eBUFFER_DEFAULT = 10000,		// 패킷의 기본 버퍼 사이즈.
 		eBUFFER_UPSCALE_BYTE = 1,
 		eBUFFER_UPSCALE_SHORT = 2,
 		eBUFFER_UPSCALE_INT = 4,
