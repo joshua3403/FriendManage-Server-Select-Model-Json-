@@ -569,9 +569,8 @@ void NetWork_Recv(DWORD UserID)
 {
 	int iResult = 0;
 	SESSION* pSession = nullptr;
-	char buffer[BUFSIZE] = { 0 };
 	int iRecvBufferFreeSize = 0;
-	int iEnqueueSize = 0;
+	int iEnqeueSize = 0;
 
 	pSession = FindSession(UserID);
 
@@ -580,18 +579,28 @@ void NetWork_Recv(DWORD UserID)
 		closesocket(listen_socket);
 
 	iRecvBufferFreeSize = pSession->RecvQ.GetFreeSize();
-	char* temp = pSession->RecvQ.GetRearBufferPtr();
+	char* temp = (char*)malloc(iRecvBufferFreeSize);
 	iResult = recv(pSession->socket, temp, iRecvBufferFreeSize, 0);
 
-	pSession->RecvQ.MoveRear(iResult);
-
-
-	if (iResult == SOCKET_ERROR || iResult == 0)
+	if (iResult == SOCKET_ERROR)
 	{
-		Disconnect(UserID);
-		return;
+		if (WSAGetLastError() != WSAEWOULDBLOCK)
+		{
+			DWORD temp = WSAGetLastError();
+			wprintf(L"recv error : %d\n", temp);
+			Disconnect(UserID);
+			return;
+		}
+
 	}
 
+	iEnqeueSize = pSession->RecvQ.Enqueue(temp, iResult);
+
+	if (iEnqeueSize != iResult)
+	{
+		PrintError(L"FatalError EndQueue");
+		exit(1);
+	}
 
 	if (iResult > 0)
 	{
@@ -633,9 +642,8 @@ void DeleteClient()
 		if ((itor)->second->socket == INVALID_SOCKET)
 		{
 			wprintf(L"Client Delete ID %d\n", itor->first);
-			int temp = (itor)->second->ID;
 			free((itor)->second);
-			itor = ClientList.erase(itor);
+			ClientList.erase(itor++);
 		}
 		else
 		{
@@ -682,7 +690,6 @@ void NetWork_Send(DWORD UserID)
 {
 	int iResult = 0;
 	SESSION* pSession = nullptr;
-	char buffer[BUFSIZE] = { 0 };
 	int iSendBufferUsingSize = 0;
 	int iDequeueSize = 0;
 
@@ -695,8 +702,11 @@ void NetWork_Send(DWORD UserID)
 	if (iSendBufferUsingSize <= 0)
 		return;
 
-	iResult = send(pSession->socket, pSession->SendQ.GetFrontBufferPtr(), iSendBufferUsingSize, 0);
-	pSession->SendQ.MoveFront(iResult);
+	char* temp = (char*)malloc(iSendBufferUsingSize);
+
+	iDequeueSize = pSession->SendQ.Dequeue(temp, iSendBufferUsingSize);
+
+	iResult = send(pSession->socket, temp, iDequeueSize, 0);
 
 	if (iResult == SOCKET_ERROR || iResult == 0)
 	{
@@ -707,9 +717,10 @@ void NetWork_Send(DWORD UserID)
 			return;
 		}
 		wprintf(L"Socket Error - Error : %d, UserID : %d\n", error, UserID);
+		free(temp);
 		Disconnect(UserID);
 		return;
-	}
+	}	free(temp);
 
 	return;
 }
